@@ -8,8 +8,9 @@ import {
   Animated
 } from "react-native";
 
-const DY_NEED_PULL = 180,
-  DY_CAN_LOOSE = 320;
+const DY_DELAY_RATIO = 0.4,
+  DY_NEED_PULL = 120 * DY_DELAY_RATIO,
+  DY_CAN_LOOSE = 200 * DY_DELAY_RATIO;
 
 export default class PullToRefreshScrollView extends Component {
   constructor(props) {
@@ -23,9 +24,9 @@ export default class PullToRefreshScrollView extends Component {
     };
 
     this.onPull = this.onPull.bind(this);
-    this.recover = this.recover.bind(this);
     this.onPullEnd = this.onPullEnd.bind(this);
     this.onStartPull = this.onStartPull.bind(this);
+    this.recoverRefreshView = this.recoverRefreshView.bind(this);
     this.onScrollViewScroll = this.onScrollViewScroll.bind(this);
 
     this.responderInstance = PanResponder.create({
@@ -38,20 +39,19 @@ export default class PullToRefreshScrollView extends Component {
   }
 
   onStartPull(evt, { dy }) {
-    const enabled = dy > 0 && this.scrollViewOffsetY == 0;
-    // console.log(
-    //   `onStartPull dy=${dy}, scrollViewOffsetY=${this.scrollViewOffsetY}, enableResponder=${enabled}`
-    // );
-    return enabled;
+    dy *= DY_DELAY_RATIO;
+    return dy > 0 && this.scrollViewOffsetY == 0;
   }
 
   onPull(evt, { dy }) {
-    console.log(`onPull`, dy);
+    dy *= DY_DELAY_RATIO;
     let refreshTitle = this.state.refreshingTitle;
     if (dy <= DY_NEED_PULL) {
       refreshTitle = "下拉刷新";
-    } else if (dy < DY_CAN_LOOSE) {
+    } else if (dy <= DY_CAN_LOOSE) {
       refreshTitle = "松手刷新";
+    } else {
+      return;
     }
 
     refreshTitle != this.state.refreshingTitle &&
@@ -61,17 +61,19 @@ export default class PullToRefreshScrollView extends Component {
   }
 
   onPullEnd(evt, { dy }) {
-    console.log("onPullEnd", dy);
+    dy *= DY_DELAY_RATIO;
     if (dy <= DY_NEED_PULL) {
-      this.recover();
+      this.recoverRefreshView(true);
       return;
     }
 
     this.setState({ refreshingTitle: "正在刷新..." });
-    setTimeout(this.recover, 3000);
+    setTimeout(() => {
+      this.setState({ refreshingTitle: "刷新成功" }, this.recoverRefreshView);
+    }, 1500);
   }
 
-  recover() {
+  recoverRefreshView(fast = false) {
     if (this.recoverAnimation) {
       this.recoverAnimation.stop();
       this.recoverAnimation = null;
@@ -79,11 +81,9 @@ export default class PullToRefreshScrollView extends Component {
 
     this.recoverAnimation = Animated.timing(this.state.refreshingHeight, {
       toValue: 0,
-      duration: 100
+      duration: fast ? 100 : 500
     });
-    this.recoverAnimation.start(() =>
-      this.setState({ refreshingTitle: "刷新成功" })
-    );
+    this.recoverAnimation.start();
   }
 
   onScrollViewScroll({
@@ -92,7 +92,6 @@ export default class PullToRefreshScrollView extends Component {
     }
   }) {
     this.scrollViewOffsetY = y;
-    console.log(`scrollViewOffsetY=${this.scrollViewOffsetY}`);
   }
 
   render() {
@@ -110,14 +109,16 @@ export default class PullToRefreshScrollView extends Component {
 
     return (
       <View style={styles.container} {...this.responderInstance.panHandlers}>
-        <Animated.View
-          style={[styles.refreshing, { height: this.state.refreshingHeight }]}
-        >
-          <Text style={styles.refreshing_text}>
-            {this.state.refreshingTitle}
-          </Text>
-        </Animated.View>
-        <ScrollView {...newProps}>{this.props.children}</ScrollView>
+        <ScrollView {...newProps}>
+          <Animated.View
+            style={[styles.refreshing, { height: this.state.refreshingHeight }]}
+          >
+            <Text style={styles.refreshing_text}>
+              {this.state.refreshingTitle}
+            </Text>
+          </Animated.View>
+          {this.props.children}
+        </ScrollView>
       </View>
     );
   }
