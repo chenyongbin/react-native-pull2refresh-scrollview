@@ -47,8 +47,8 @@ const styles = StyleSheet.create({
     alignContent: "center"
   },
   img: {
-    width: 28,
-    height: 28,
+    width: 24,
+    height: 24,
     alignSelf: "center"
   },
   text: {

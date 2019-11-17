@@ -18,8 +18,8 @@ export default class PullToRefreshScrollView extends Component {
   constructor(props) {
     super(props);
 
-    this.recoverAnimation = 0;
-    this.scrollViewOffsetY = 0;
+    this.recoverAnimation = null;
+    this.scrollViewReachTop = true;
     this.state = {
       refreshViewState: RefreshState.needPull,
       refreshViewHeight: new Animated.Value(0)
@@ -28,8 +28,9 @@ export default class PullToRefreshScrollView extends Component {
     this.onPull = this.onPull.bind(this);
     this.onPullEnd = this.onPullEnd.bind(this);
     this.onStartPull = this.onStartPull.bind(this);
-    this.recoverRefreshView = this.recoverRefreshView.bind(this);
     this.onScrollViewScroll = this.onScrollViewScroll.bind(this);
+    this.disposeRecoverAimation = this.disposeRecoverAimation.bind(this);
+    this.recoverRefreshView = this.recoverRefreshView.bind(this);
 
     this.responderInstance = PanResponder.create({
       onStartShouldSetPanResponder: this.onStartPull,
@@ -42,7 +43,12 @@ export default class PullToRefreshScrollView extends Component {
 
   onStartPull(evt, { dy }) {
     dy *= DY_DELAY_RATIO;
-    return dy > 0 && this.scrollViewOffsetY == 0;
+    return (
+      dy > 0 &&
+      this.scrollViewReachTop &&
+      this.state.refreshViewState != RefreshState.refreshing &&
+      this.recoverAnimation == null
+    );
   }
 
   onPull(evt, { dy }) {
@@ -70,25 +76,31 @@ export default class PullToRefreshScrollView extends Component {
     }
 
     this.setState({ refreshViewState: RefreshState.refreshing });
-    setTimeout(() => {
-      this.setState(
-        { refreshViewState: RefreshState.refreshFinish },
-        this.recoverRefreshView
-      );
-    }, 1500);
+    if (this.props.onRefresh) {
+      this.props.onRefresh(() => {
+        this.setState(
+          { refreshViewState: RefreshState.refreshFinish },
+          this.recoverRefreshView
+        );
+      });
+    }
   }
 
-  recoverRefreshView(fast = false) {
+  disposeRecoverAimation() {
     if (this.recoverAnimation) {
       this.recoverAnimation.stop();
       this.recoverAnimation = null;
     }
+  }
+
+  recoverRefreshView(fast = false) {
+    this.disposeRecoverAimation();
 
     this.recoverAnimation = Animated.timing(this.state.refreshViewHeight, {
       toValue: 0,
       duration: fast ? 100 : 500
     });
-    this.recoverAnimation.start();
+    this.recoverAnimation.start(this.disposeRecoverAimation);
   }
 
   onScrollViewScroll({
@@ -96,27 +108,34 @@ export default class PullToRefreshScrollView extends Component {
       contentOffset: { y }
     }
   }) {
-    this.scrollViewOffsetY = y;
+    this.scrollViewReachTop = y == 0;
   }
 
   render() {
-    const { enableRefresh, children } = this.props;
+    const { enableRefresh, renderRefresh, children } = this.props;
     if (!enableRefresh) {
       return <ScrollView {...this.props}>{children}</ScrollView>;
     }
 
     const newProps = Object.assign({}, this.props, {
-      bounces: false,
-      scrollEventThrottle: 100,
-      onScroll: this.onScrollViewScroll
-    });
+        bounces: false,
+        scrollEventThrottle: 50,
+        onScroll: this.onScrollViewScroll
+      }),
+      refreshViewState = {
+        height: this.state.refreshViewHeight,
+        refreshState: this.state.refreshViewState
+      };
+
+    let refreshView = renderRefresh ? renderRefresh(refreshViewState) : null;
+    if (refreshView == null) {
+      refreshView = <RefreshView {...refreshViewState} />;
+    }
+
     return (
       <View style={styles.container} {...this.responderInstance.panHandlers}>
         <ScrollView {...newProps}>
-          <RefreshView
-            height={this.state.refreshViewHeight}
-            refreshState={this.state.refreshViewState}
-          />
+          {refreshView}
           {this.props.children}
         </ScrollView>
       </View>
